@@ -1,9 +1,6 @@
-#if os(Linux)
-
 import XCTest
-@testable import HashedPasswordTestSuite
+@testable import HashedPasswordTests
 
 XCTMain([
   testCase(HashedPasswordTests.allTests),
 ])
-#endif

@@ -22,29 +22,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-@_exported import POSIX
-@_exported import OpenSSL
-@_exported import String
+import Core
+import OpenSSL
 
-private extension HashType {
+private extension Hash.Function {
 	init?(string: String) {
 		switch string {
-		case "sha1":	self = .SHA1
-		case "sha224":	self = .SHA224
-		case "sha256":	self = .SHA256
-		case "sha384":	self = .SHA384
-		case "sha512":	self = .SHA512
+		case "md5":		self = .md5
+		case "sha1":	self = .sha1
+		case "sha224":	self = .sha224
+		case "sha256":	self = .sha256
+		case "sha384":	self = .sha384
+		case "sha512":	self = .sha512
 		default:			return nil
 		}
 	}
 	
 	var string: String {
 		switch self {
-		case .SHA1:		return "sha1"
-		case .SHA224:	return "sha224"
-		case .SHA256:	return "sha256"
-		case .SHA384:	return "sha384"
-		case .SHA512:	return "sha512"
+		case .md5:		return "md5"
+		case .sha1:		return "sha1"
+		case .sha224:	return "sha224"
+		case .sha256:	return "sha256"
+		case .sha384:	return "sha384"
+		case .sha512:	return "sha512"
 		}
 	}
 	
@@ -53,17 +54,17 @@ private extension HashType {
 	}
 }
 
+public enum HashedPasswordError: Error {
+	case invalidString
+}
+
 public struct HashedPassword: Equatable, CustomStringConvertible {
 	
-	public enum Error: ErrorProtocol {
-		case invalidString
-	}
-	
 	public let hash: String
-	public let hashType: HashType
+	public let hashType: Hash.Function
 	public let salt: String
 	
-	public init(hash: String, hashType: HashType, salt: String) {
+	public init(hash: String, hashType: Hash.Function, salt: String) {
 		self.hash = hash
 		self.hashType = hashType
 		self.salt = salt
@@ -71,24 +72,16 @@ public struct HashedPassword: Equatable, CustomStringConvertible {
 	
 	public init(string: String) throws {
 		let passwordComps = string.split(separator: "$")
-		guard passwordComps.count == 3, let hashType = HashType(string: passwordComps[1]) else { throw Error.invalidString }
+		guard passwordComps.count == 3, let hashType = Hash.Function(string: passwordComps[1]) else { throw HashedPasswordError.invalidString }
 		self.init(hash: passwordComps[0], hashType: hashType, salt: passwordComps[2])
 	}
 	
-	private static func rand(max: Int) -> Int {
-		#if os(Linux)
-			return Int(random() % (max + 1))
-		#else
-			return Int(arc4random_uniform(UInt32(max)))
-		#endif
-	}
-	
-	public init(password: String, hashType: HashType = .SHA1) {
-		let pool = Array(CharacterSet.letters.characters)
+	public init(password: String, hashType: Hash.Function = .sha1) {
+		let pool = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]
 		var salt = ""
 		for _ in 0 ..< 22 {
-			let i = HashedPassword.rand(max: pool.count - 1)
-			salt += String(pool[i])
+			let i = Random.number(max: pool.count - 1)
+			salt += pool[i]
 		}
 		self.hashType = hashType
 		self.salt = salt
