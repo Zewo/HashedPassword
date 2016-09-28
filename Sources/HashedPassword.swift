@@ -25,8 +25,8 @@
 import Core
 import OpenSSL
 
-private extension Hash.Function {
-	init?(string: String) {
+internal extension Hash.Function {
+	internal init?(string: String) {
 		switch string {
 		case "md5":		self = .md5
 		case "sha1":	self = .sha1
@@ -38,7 +38,7 @@ private extension Hash.Function {
 		}
 	}
 	
-	var string: String {
+	internal var string: String {
 		switch self {
 		case .md5:		return "md5"
 		case .sha1:		return "sha1"
@@ -48,10 +48,6 @@ private extension Hash.Function {
 		case .sha512:	return "sha512"
 		}
 	}
-	
-	func hash(salt: String, message: String) -> String {
-		return Hash.hmac(self, key: salt.data, message: message.data).hexadecimalString().lowercased()
-	}
 }
 
 public enum HashedPasswordError: Error {
@@ -60,46 +56,98 @@ public enum HashedPasswordError: Error {
 
 public struct HashedPassword: Equatable, CustomStringConvertible {
 	
+	public enum Method: Equatable {
+		case hash(hashType: Hash.Function)
+		case hmac(hashType: Hash.Function)
+		case pbkdf2(hashType: Hash.Function, iterations: Int)
+		
+		internal init?(string: String) {
+			let comps = string.split(separator: "_")
+			guard let methodStr = comps.first else { return nil }
+			switch methodStr {
+			case "hash":
+				guard comps.count == 2, let hashType = Hash.Function(string: comps[1]) else { return nil }
+				self = .hash(hashType: hashType)
+			case "hmac":
+				guard comps.count == 2, let hashType = Hash.Function(string: comps[1]) else { return nil }
+				self = .hmac(hashType: hashType)
+			case "pbkdf2":
+				guard comps.count == 3, let hashType = Hash.Function(string: comps[1]), let iterations = Int(comps[2]) else { return nil }
+				self = .pbkdf2(hashType: hashType, iterations: iterations)
+			default:
+				return nil
+			}
+		}
+		
+		internal var string: String {
+			switch self {
+			case .hash(let hashType):
+				return "hash_" + hashType.string
+			case .hmac(let hashType):
+				return "hmac_" + hashType.string
+			case .pbkdf2(let hashType, let iterations):
+				return "pbkdf2_" + hashType.string + "_" + String(iterations)
+			}
+		}
+		
+		internal func calculate(password: String, salt: String) throws -> String {
+			let data: Data
+			switch self {
+			case .hash(let hashType):
+				data = Hash.hash(hashType, message: (salt + password).data)
+			case .hmac(let hashType):
+				data = Hash.hmac(hashType, key: salt.data, message: password.data)
+			case .pbkdf2(let hashType, let iterations):
+				data = try PBKDF2.calculate(password: password.data, salt: salt.data, iterations: iterations, hashType: hashType)
+			}
+			return data.hexadecimalString().lowercased()
+		}
+		
+		public static func ==(lhs: Method, rhs: Method) -> Bool {
+			return true
+		}
+	}
+	
 	public let hash: String
-	public let hashType: Hash.Function
+	public let method: Method
 	public let salt: String
 	
-	public init(hash: String, hashType: Hash.Function, salt: String) {
+	public init(hash: String, method: Method, salt: String) {
 		self.hash = hash
-		self.hashType = hashType
+		self.method = method
 		self.salt = salt
 	}
 	
 	public init(string: String) throws {
 		let passwordComps = string.split(separator: "$")
-		guard passwordComps.count == 3, let hashType = Hash.Function(string: passwordComps[1]) else { throw HashedPasswordError.invalidString }
-		self.init(hash: passwordComps[0], hashType: hashType, salt: passwordComps[2])
+		guard passwordComps.count == 3, let method = Method(string: passwordComps[1]) else { throw HashedPasswordError.invalidString }
+		self.init(hash: passwordComps[0], method: method, salt: passwordComps[2])
 	}
 	
-	public init(password: String, hashType: Hash.Function = .sha1) {
+	public init(password: String, method: Method = .pbkdf2(hashType: .sha256, iterations: 4096), saltLen: Int = 30) throws {
 		let pool = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]
 		var salt = ""
-		for _ in 0 ..< 22 {
+		for _ in 0 ..< saltLen {
 			let i = Random.number(max: pool.count - 1)
 			salt += pool[i]
 		}
-		self.hashType = hashType
+		self.method = method
 		self.salt = salt
-		self.hash = hashType.hash(salt: salt, message: password)
+		self.hash = try method.calculate(password: password, salt: salt)
 	}
 
 	public var description: String {
-		return "\(hash)$\(hashType.string)$\(salt)"
+		return "\(hash)$\(method.string)$\(salt)"
+	}
+	
+	public static func ==(lhs: HashedPassword, rhs: HashedPassword) -> Bool {
+		return lhs.hash == rhs.hash && lhs.method == rhs.method && lhs.salt == rhs.salt
 	}
 	
 }
 
-public func ==(lhs: HashedPassword, rhs: HashedPassword) -> Bool {
-	return lhs.hash == rhs.hash && lhs.hashType == rhs.hashType && lhs.salt == rhs.salt
-}
-
 public func ==(lhs: HashedPassword, rhs: String) -> Bool {
-	return lhs.hashType.hash(salt: lhs.salt, message: rhs) == lhs.hash.lowercased()
+	return (try? lhs.method.calculate(password: rhs, salt: lhs.salt)) == lhs.hash.lowercased()
 }
 
 public func ==(lhs: String, rhs: HashedPassword) -> Bool { return rhs == lhs }
