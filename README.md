@@ -62,7 +62,7 @@ This project is released under the MIT license. See [LICENSE](LICENSE) for detai
 [slack-image]: http://s13.postimg.org/ybwy92ktf/Slack.png
 [slack-badge]: https://zewo-slackin.herokuapp.com/badge.svg
 [slack-url]: http://slack.zewo.io
-[travis-badge]: https://travis-ci.org/alex-alex/HashedPassword.svg?branch=master
-[travis-url]: https://travis-ci.org/alex-alex/HashedPassword
-[codebeat-badge]: https://codebeat.co/badges/2be6cee0-ed67-4bf4-aedb-dd480f2d62ea
-[codebeat-url]: https://codebeat.co/projects/github-com-alex-alex-hashedpassword
+[travis-badge]: https://travis-ci.org/Zewo/HashedPassword.svg?branch=master
+[travis-url]: https://travis-ci.org/Zewo/HashedPassword
+[codebeat-badge]: https://codebeat.co/badges/c340b3e6-1695-4cc1-a7e5-8bce33c5e697
+[codebeat-url]: https://codebeat.co/projects/github-com-zewo-hashedpassword
