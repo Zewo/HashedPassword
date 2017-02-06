@@ -2,11 +2,6 @@ import XCTest
 @testable import HashedPassword
 
 class HashedPasswordTests: XCTestCase {
-    func testPBKDF2() throws {
-		let data = try PBKDF2.calculate(password: "password".data, salt: "salt".data)
-		XCTAssertEqual(data.hexadecimalString().lowercased(), "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a")
-    }
-	
 	func testHashedPassword() throws {
 		let hashed1 = try HashedPassword(string: "1293b6cf05902a0333ed1db991f296d36641491fb2afb83fca968e8a4a80b7cb$pbkdf2_sha256_4096$ALCKgWoguBGWikAqMErOIFmSmYlUVL")
 		XCTAssert(hashed1 == "test1")
@@ -22,7 +17,6 @@ class HashedPasswordTests: XCTestCase {
 extension HashedPasswordTests {
     static var allTests: [(String, (HashedPasswordTests) -> () throws -> Void)] {
 		return [
-			("testPBKDF2", testPBKDF2),
 			("testHashedPassword", testHashedPassword),
         ]
     }
