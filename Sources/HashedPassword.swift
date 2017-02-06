@@ -23,109 +23,87 @@
 // SOFTWARE.
 
 import Foundation
-import Axis
-import OpenSSL
-
-internal extension Hash.Function {
-	internal init?(string: String) {
-		switch string {
-		case "md5":		self = .md5
-		case "sha1":	self = .sha1
-		case "sha224":	self = .sha224
-		case "sha256":	self = .sha256
-		case "sha384":	self = .sha384
-		case "sha512":	self = .sha512
-		default:			return nil
-		}
-	}
-	
-	internal var string: String {
-		switch self {
-		case .md5:		return "md5"
-		case .sha1:		return "sha1"
-		case .sha224:	return "sha224"
-		case .sha256:	return "sha256"
-		case .sha384:	return "sha384"
-		case .sha512:	return "sha512"
-		}
-	}
-}
+import CryptoSwift
 
 public enum HashedPasswordError: Error {
 	case invalidString
 }
 
-public struct HashedPassword: Equatable, CustomStringConvertible {
+public enum HashMethod: Equatable {
+	case hash(variant: HMAC.Variant)
+	case hmac(variant: HMAC.Variant)
+	case pbkdf2(variant: HMAC.Variant, iterations: Int)
 	
-	public enum Method: Equatable {
-		case hash(hashType: Hash.Function)
-		case hmac(hashType: Hash.Function)
-		case pbkdf2(hashType: Hash.Function, iterations: Int)
-		
-		internal init?(string: String) {
-			let comps = string.split(separator: "_")
-			guard let methodStr = comps.first else { return nil }
-			switch methodStr {
-			case "hash":
-				guard comps.count == 2, let hashType = Hash.Function(string: comps[1]) else { return nil }
-				self = .hash(hashType: hashType)
-			case "hmac":
-				guard comps.count == 2, let hashType = Hash.Function(string: comps[1]) else { return nil }
-				self = .hmac(hashType: hashType)
-			case "pbkdf2":
-				guard comps.count == 3, let hashType = Hash.Function(string: comps[1]), let iterations = Int(comps[2]) else { return nil }
-				self = .pbkdf2(hashType: hashType, iterations: iterations)
-			default:
-				return nil
-			}
-		}
-		
-		internal var string: String {
-			switch self {
-			case .hash(let hashType):
-				return "hash_" + hashType.string
-			case .hmac(let hashType):
-				return "hmac_" + hashType.string
-			case .pbkdf2(let hashType, let iterations):
-				return "pbkdf2_" + hashType.string + "_" + String(iterations)
-			}
-		}
-		
-		internal func calculate(password: String, salt: String) throws -> String {
-			let data: Buffer
-			switch self {
-			case .hash(let hashType):
-				data = Hash.hash(hashType, message: (salt + password).buffer)
-			case .hmac(let hashType):
-				data = Hash.hmac(hashType, key: salt.buffer, message: password.buffer)
-			case .pbkdf2(let hashType, let iterations):
-				data = try PBKDF2.calculate(password: password.buffer, salt: salt.buffer, iterations: iterations, hashType: hashType)
-			}
-			return data.hexadecimalString().lowercased()
-		}
-		
-		public static func ==(lhs: Method, rhs: Method) -> Bool {
-			return true
+	internal init?(string: String) {
+		let comps = string.components(separatedBy: "_")
+		guard let methodStr = comps.first else { return nil }
+		switch methodStr {
+		case "hash":
+			guard comps.count == 2, let hashType = HMAC.Variant(string: comps[1]) else { return nil }
+			self = .hash(variant: hashType)
+		case "hmac":
+			guard comps.count == 2, let hashType = HMAC.Variant(string: comps[1]) else { return nil }
+			self = .hmac(variant: hashType)
+		case "pbkdf2":
+			guard comps.count == 3, let hashType = HMAC.Variant(string: comps[1]), let iterations = Int(comps[2]) else { return nil }
+			self = .pbkdf2(variant: hashType, iterations: iterations)
+		default:
+			return nil
 		}
 	}
 	
+	internal var string: String {
+		switch self {
+		case .hash(let variant):
+			return "hash_" + variant.string
+		case .hmac(let variant):
+			return "hmac_" + variant.string
+		case .pbkdf2(let variant, let iterations):
+			return "pbkdf2_" + variant.string + "_" + String(iterations)
+		}
+	}
+	
+	internal func calculate(password: String, salt: String) throws -> String {
+		guard let saltData = salt.data(using: .utf8)?.bytes,
+			  let passwordData = password.data(using: .utf8)?.bytes else { throw HashedPasswordError.invalidString }
+		
+		let data: [UInt8]
+		switch self {
+		case .hash(let variant):
+			data = variant.calculateHash(saltData+passwordData)
+		case .hmac(let variant):
+			data = try HMAC(key: saltData, variant: variant).authenticate(passwordData)
+		case .pbkdf2(let variant, let iterations):
+			data = try PKCS5.PBKDF2(password: passwordData, salt: saltData, iterations: iterations, variant: variant).calculate()
+		}
+		
+		return data.reduce("", { $0 + String(format: "%02x", $1) })
+	}
+	
+	public static func ==(lhs: HashMethod, rhs: HashMethod) -> Bool {
+		return true
+	}
+}
+
+public struct HashedPassword: Equatable, CustomStringConvertible {
+
 	public let hash: String
-	public let method: Method
+	public let method: HashMethod
 	public let salt: String
 	
-	public init(hash: String, method: Method, salt: String) {
+	public init(hash: String, method: HashMethod, salt: String) {
 		self.hash = hash
 		self.method = method
 		self.salt = salt
 	}
 	
 	public init(string: String) throws {
-		let passwordComps = string.split(separator: "$")
-		guard passwordComps.count == 3, let method = Method(string: passwordComps[1]) else { throw HashedPasswordError.invalidString }
+		let passwordComps = string.components(separatedBy: "$")
+		guard passwordComps.count == 3, let method = HashMethod(string: passwordComps[1]) else { throw HashedPasswordError.invalidString }
 		self.init(hash: passwordComps[0], method: method, salt: passwordComps[2])
 	}
 	
-	public init(password: String, method: Method = .pbkdf2(hashType: .sha256, iterations: 4096), saltLen: Int = 30) throws {
+	public init(password: String, method: HashMethod = .pbkdf2(variant: .sha256, iterations: 4096), saltLen: Int = 30) throws {
 		let pool = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]
 		var salt = ""
 		for _ in 0 ..< saltLen {
