@@ -22,7 +22,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-import Core
+import Foundation
+import Axis
 import OpenSSL
 
 internal extension Hash.Function {
@@ -91,14 +92,14 @@ public struct HashedPassword: Equatable, CustomStringConvertible {
 		}
 		
 		internal func calculate(password: String, salt: String) throws -> String {
-			let data: Data
+			let data: Buffer
 			switch self {
 			case .hash(let hashType):
-				data = Hash.hash(hashType, message: (salt + password).data)
+				data = Hash.hash(hashType, message: (salt + password).buffer)
 			case .hmac(let hashType):
-				data = Hash.hmac(hashType, key: salt.data, message: password.data)
+				data = Hash.hmac(hashType, key: salt.buffer, message: password.buffer)
 			case .pbkdf2(let hashType, let iterations):
-				data = try PBKDF2.calculate(password: password.data, salt: salt.data, iterations: iterations, hashType: hashType)
+				data = try PBKDF2.calculate(password: password.buffer, salt: salt.buffer, iterations: iterations, hashType: hashType)
 			}
 			return data.hexadecimalString().lowercased()
 		}

@@ -28,16 +28,17 @@
 	import Darwin.C
 #endif
 
+import Foundation
 import OpenSSL
 
 fileprivate extension UInt {
-	var data: Data {
-		var inti = Array<UInt8>(repeating: 0, count: 4)
-		inti[0] = UInt8((self >> 24) & 0xFF)
-		inti[1] = UInt8((self >> 16) & 0xFF)
-		inti[2] = UInt8((self >> 8) & 0xFF)
-		inti[3] = UInt8(self & 0xFF)
-		return Data(bytes: inti)
+	var buffer: Buffer {
+		var inti = Array<Byte>(repeating: 0, count: 4)
+		inti[0] = Byte((self >> 24) & 0xFF)
+		inti[1] = Byte((self >> 16) & 0xFF)
+		inti[2] = Byte((self >> 8) & 0xFF)
+		inti[3] = Byte(self & 0xFF)
+		return Buffer(inti)
 	}
 }
 
@@ -49,17 +50,17 @@ internal enum PBKDF2Error: Error {
 internal struct PBKDF2 {
 	
 	private let dkLen: Int
-	private let password: Data
-	private let salt: Data
+	private let password: Buffer
+	private let salt: Buffer
 	private let iterations: Int
 	private let numBlocks: UInt
 	private let hashType: Hash.Function
 	
-	internal static func calculate(password: Data, salt: Data, iterations: Int = 4096, keyLength: Int? = nil, hashType: Hash.Function = .sha256) throws -> Data {
+	internal static func calculate(password: Buffer, salt: Buffer, iterations: Int = 4096, keyLength: Int? = nil, hashType: Hash.Function = .sha256) throws -> Buffer {
 		return try PBKDF2(password: password, salt: salt, iterations: iterations, keyLength: keyLength, hashType: hashType).calculate()
 	}
 	
-	private init(password: Data, salt: Data, iterations: Int = 4096, keyLength: Int? = nil, hashType: Hash.Function = .sha256) throws {
+	private init(password: Buffer, salt: Buffer, iterations: Int = 4096, keyLength: Int? = nil, hashType: Hash.Function = .sha256) throws {
 		guard iterations > 0 && !password.isEmpty && !salt.isEmpty else {
 			throw PBKDF2Error.invalidInput
 		}
@@ -78,19 +79,21 @@ internal struct PBKDF2 {
 		self.hashType = hashType
 	}
 	
-	private func calculate() -> Data {
-		var ret = Data()
+	private func calculate() -> Buffer {
+		var ret = Buffer()
 		for i in 1 ... numBlocks {
 			if let value = calculateBlock(salt, blockNum: i) {
-				ret.append(contentsOf: value)
+				ret.append(value)
 			}
 		}
-		return Data(ret.prefix(dkLen))
+		return Buffer(ret.bytes.prefix(dkLen))
 	}
 	
-	private func calculateBlock(_ salt: Data, blockNum: UInt) -> Data? {
-		var u = Hash.hmac(hashType, key: password, message: salt + blockNum.data)
-		var ret = u
+	private func calculateBlock(_ salt: Buffer, blockNum: UInt) -> Buffer? {
+		var message = salt
+		message.append(blockNum.buffer)
+		var u = Hash.hmac(hashType, key: password, message: message)
+		var ret = u.bytes
 		if iterations > 1 {
 			for _ in 2 ... iterations {
 				u = Hash.hmac(hashType, key: password, message: u)
@@ -99,7 +102,7 @@ internal struct PBKDF2 {
 				}
 			}
 		}
-		return ret
+		return Buffer(ret)
 	}
 	
 }
